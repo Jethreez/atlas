@@ -1,51 +1,57 @@
 import cv2
-import numpy as np
+from ultralytics import YOLO
 
-#renk algilayarak calisiyor.
+model = YOLO("duba.pt")
 
-cap = cv2.VideoCapture(0)  # 0 dahili, 1 harici webcam
-
+cap = cv2.VideoCapture(0) #harici kamera icin 1
 if not cap.isOpened():
-    print("Kamera açılamadı!")
+    print("kamera yok")
     exit()
 
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("Kare alınamadı!")
         break
 
-    # Görüntüyü HSV renk uzayına çevir
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    h, w = frame.shape[:2]
 
-    # Turuncu/Kırmızı aralığı (duba rengi için yaklaşık)
-    lower_orange = np.array([5, 100, 100])
-    upper_orange = np.array([20, 255, 255])
+    results = model.predict(frame, conf=0.5, verbose=False)
 
-    # Maske oluştur
-    mask = cv2.inRange(hsv, lower_orange, upper_orange)
+    cone_count = 0
 
-    # Gürültü temizleme (morfolojik işlemler)
-    kernel = np.ones((5,5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, kernel)
+    for r in results:
+        boxes = r.boxes
+        for i in range(len(boxes)):
+            xyxy = boxes.xyxy[i].cpu().numpy()
+            cls_id = int(boxes.cls[i].cpu().numpy())
 
-    # Kontur bulma
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            label = model.names[cls_id].lower().replace("-", "").replace(" ", "")
+            if label == "trafficcone":
+                cone_count += 1
 
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area > 500:  # Küçük nesneleri ele
-            x, y, w, h = cv2.boundingRect(cnt)
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(frame, "Duba", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 
-                        0.6, (0, 255, 0), 2)
+                x1, y1, x2, y2 = map(int, xyxy)
+                obj_h = y2 - y1
+                cx = x1 + (x2 - x1) // 2
 
-    # Görüntüleri göster
-    cv2.imshow("Kamera", frame)
-    cv2.imshow("Maske", mask)
+                distance_m = 1000 / obj_h
+                offset_x = cx - (w / 2)
+                angle_deg = (offset_x / (w / 2)) * 30
 
-    # q tuşu ile çıkış
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, "Duba", (x1, y1 - 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(frame, f"Yon = {angle_deg:.1f} deg", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                cv2.putText(frame, f"Uzaklik = {distance_m:.2f} m", (x1, y2 + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+    cv2.putText(frame, f"Duba Sayisi = {cone_count}", (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+    cv2.putText(frame, "Cikmak icin Q'ya basin", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+    cv2.imshow("YOLO Duba Tespiti", frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
