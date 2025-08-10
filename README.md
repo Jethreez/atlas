@@ -3,7 +3,7 @@ yapılacaklar:
 
 +duba tanıma
 -duba yön ve mesafe tespit etme
--dubadan kaçacak yol tayin etme
+-dubadan kaçacak sekilde yon belirleme
 -motor bağlantısı
 
 
