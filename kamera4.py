@@ -4,14 +4,20 @@ import requests
 import threading
 import time
 import json
+from ultralytics import YOLO
+
 
 class PanTiltController:
     def __init__(self, esp32_ip="192.168.43.185"):  # ESP32'nizin IP adresini buraya yazın
+        
+        self.model = YOLO("duba.pt")
+        self.cone_tracking = False
+        self.mode = 0  #mod degiskeni
+        self.click_mode = True 
+
         self.esp32_ip = esp32_ip
         self.camera = None
         self.running = False
-        self.click_mode = True  # Tıklama modunda başla
-        self.face_tracking = False  # Yüz takibi modu
         self.target_x = None
         self.target_y = None
         
@@ -88,7 +94,7 @@ class PanTiltController:
         # Minimum 20 piksel olsun
         self.face_dead_zone = max(20, self.face_dead_zone)
         
-    def initialize_camera(self, camera_index=0):
+    def initialize_camera(self, camera_index=0):    
         """Kamerayı başlat"""
         self.camera = cv2.VideoCapture(camera_index)
         if not self.camera.isOpened():
@@ -293,7 +299,7 @@ class PanTiltController:
             
             if time_since_last_face > self.no_face_timeout and not self.lost_target_recovery:
                 # 5 saniyedir hedef görülmüyor, merkeze dön
-                print(f"⚠️ {self.no_face_timeout} saniyedir hedef bulunamadı! Merkeze dönülüyor...")
+                print(f"{self.no_face_timeout} saniyedir hedef bulunamadı! Merkeze dönülüyor...")
                 self.center_camera()
                 self.zoom_level = 1.0  # Zoom'u sıfırla
                 self.update_dead_zone()  # Dead zone'u güncelle
@@ -323,8 +329,11 @@ class PanTiltController:
             cv2.circle(frame, (self.target_x, self.target_y), 10, (0, 0, 255), 2)
         
         # Durum bilgisi
-        mode_text = "Tıklama Modu" if self.click_mode else "Yüz Takip Modu"
-        cv2.putText(frame, mode_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        modes = ["Tiklama Modu", "Yüz Takip Modu", "Duba Takip Modu"]
+        
+        
+        cv2.putText(frame, f"Mod: {modes[self.mode]}", (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
         # Zoom bilgisi - Dinamik hız gösterimi
         zoom_speed_factor = 1.0 / self.zoom_level
@@ -402,7 +411,6 @@ class PanTiltController:
         self.lost_target_recovery = False
     
     def run(self):
-        """Ana döngü"""
         if not self.initialize_camera():
             return
         
@@ -411,7 +419,7 @@ class PanTiltController:
         
         print("Kamera kontrolü başladı...")
         print("ESP32 IP adresi:", self.esp32_ip)
-        print("🎯 BULLSEYE MODU AKTIF - Hareket hızı %50'ye düşürüldü")
+        print("BULLSEYE - Hareket hızı %50'ye düşürüldü")
         print("Kontroller:")
         print("- Mouse ile tıklayın: Kamera o noktaya yönelir")
         print("- SPACE: Tıklama modu / Yüz takip modu arası geçiş")
@@ -420,7 +428,7 @@ class PanTiltController:
         print("- R: Zoom reset")
         print("- A: Auto-zoom aç/kapat")
         print("- Q: Çıkış")
-        print("🛡️ Kayıp hedef koruması: 5 saniye hedef görülmezse merkeze döner")
+        print("Kayıp hedef koruması: 5 saniye hedef görülmezse merkeze döner")
         
         self.running = True
         
@@ -434,9 +442,12 @@ class PanTiltController:
             frame = self.apply_zoom(frame)
             
             # Yüz takip modu aktifse yüz tanıma yap
-            if self.face_tracking:
+            if self.mode == 1:  # Yüz takibi
                 frame = self.detect_and_track_faces(frame)
-            
+            elif self.mode == 2:  # Duba takibi
+                if frame is not None:
+                    frame = self.detect_and_track_cone(frame)
+
             # Arayüzü çiz
             frame = self.draw_interface(frame)
             
@@ -446,14 +457,12 @@ class PanTiltController:
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 self.running = False
-            elif key == ord(' '):  # Space tuşu
-                self.click_mode = not self.click_mode
-                self.face_tracking = not self.face_tracking
-                mode = "Tıklama Modu" if self.click_mode else "Yüz Takip Modu"
-                print(f"Mod değiştirildi: {mode}")
-                # Mod değişirken kayıp hedef korumasını sıfırla
-                self.last_face_detection_time = time.time()
-                self.lost_target_recovery = False
+
+            
+            elif key == ord(' '):
+                self.mode = (self.mode + 1) % 3  # 0->1->2->0
+                modes = ["Tıklama Modu", "Yüz Takip Modu", "Duba Takip Modu"]
+                print(f"Mod değiştirildi: {modes[self.mode]}")
             elif key == ord('c'):
                 self.center_camera()
             elif key == ord('+') or key == ord('='):
@@ -466,7 +475,59 @@ class PanTiltController:
                 self.toggle_auto_zoom()
         
         self.cleanup()
+
     
+    def detect_and_track_cone(self, frame):
+        if frame is None:
+            return frame
+
+        results = self.model(frame, conf=0.5, verbose=False) #yuksek conf daha az tahmin
+        r = results[0]
+
+        # Sonuç/box yoksa olduğu gibi dön
+        if r is None or r.boxes is None or len(r.boxes) == 0:
+            return frame
+
+        names = getattr(r, "names", None)
+        if names is None:
+            names = getattr(self.model, "names", {})
+
+        best = None
+        for box, conf, cls_id in zip(
+            r.boxes.xyxy.cpu().numpy(),
+            r.boxes.conf.cpu().numpy(),
+            r.boxes.cls.cpu().numpy()
+        ):
+            cls_id = int(cls_id)
+            label = str(names.get(cls_id, cls_id)).lower().replace("-", "").replace(" ", "")
+            if label in ("trafficcone", "trafficcone", "cone", "duba"):
+                if best is None or conf > best[1]:
+                    best = (box, conf)
+
+        if best is not None:
+            x1, y1, x2, y2 = best[0].astype(int)
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+            obj_h = max(1, y2 - y1)  # sıfıra bölme koruması
+
+            # Basit uzaklık & açı göstergesi
+            h, w = frame.shape[:2]
+            distance_m = 1000 / obj_h
+            offset_x = cx - (w / 2)
+            angle_deg = (offset_x / (w / 2)) * 30
+
+            # Çizimler
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 165, 255), 2)
+            cv2.circle(frame, (cx, cy), 5, (0, 255, 0), -1)
+            cv2.putText(frame, "Duba", (x1, max(0, y1 - 25)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+            cv2.putText(frame, f"Yon = {angle_deg:.1f} deg", (x1, max(0, y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            cv2.putText(frame, f"Uzaklik = {distance_m:.2f} m", (x1, min(h-10, y2 + 20)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+
+        return frame
     def cleanup(self):
         """Temizleme işlemleri"""
         print("Temizlik yapılıyor...")
@@ -475,6 +536,8 @@ class PanTiltController:
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
+
+    
     # ESP32'nizin IP adresini buraya yazın
     esp32_ip = "192.168.43.185"  # Arduino kodunuzdan aldığınız IP adresini yazın
     
