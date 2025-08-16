@@ -11,6 +11,8 @@ yapılacaklar:
 
 -motor baglantisi (saliya biter)
 
+-lane detection ve pid
+
 
 -mesafe sensörü secme alma(zeynep?)
 
