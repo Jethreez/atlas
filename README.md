@@ -9,7 +9,7 @@ yapılacaklar:
 
 -dubadan kaçacak sekilde yon belirleme(bahadir)
 
--motor bağlantısı
+-motor baglantisi (saliya biter)
 
 
 -mesafe sensörü secme alma(zeynep?)
