@@ -4,7 +4,7 @@ yapılacaklar:
 +duba tanıma
 
 -kamera4.py su an bozuk
-
+-hedef ve tabela tanima testleri
 +duba yön ve mesafe tespit etme(pazar gunu emre ve isa test edecek)
 
 -dubadan kaçacak sekilde yon belirleme(bahadir)
