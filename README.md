@@ -3,17 +3,16 @@ yapılacaklar:
 
 +duba tanıma
 
--kamera4.py su an bozuk
--hedef ve tabela tanima testleri
 +duba yön ve mesafe tespit etme(pazar gunu emre ve isa test edecek)
+
++mesafe sensörü secme alma
+
++mesafe sensörü verisi işleme ve test(carsamba persembe)
 
 -dubadan kaçacak sekilde yon belirleme(bahadir)
 
 -motor baglantisi (saliya biter)
 
--lane detection ve pid
+-genel durus testleri
 
 
--mesafe sensörü secme alma(zeynep?)
-
--mesafe sensörü verisi işleme ve test(carsamba persembe)
