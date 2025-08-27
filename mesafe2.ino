@@ -7,8 +7,8 @@
 //      |                        |      1:sol ön
 //      |                        |      2:orta
 //      |                        |      3:sağ ön
-//      |                        |      4:sol arka
-//      |          araç          |      5:sağ arka
+//      |                        |      4:sağ arka
+//      |          araç          |      5:sol arka
 //      |                        |
 //    4>|                        |<5
 //      |                        |
@@ -87,4 +87,5 @@ void loop() {
   
   delay(400);
 }
+
 
